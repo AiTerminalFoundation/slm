@@ -1,15 +1,17 @@
-class BytePairEncodingTokenizer:
+class ByteLeveLBytePairEncodingTokenizer:
 
     def __init__(self, corpus, num_merges=100):
         self.corpus = corpus
         self.merges_vocabulary = set()
 
+        # initializing the vocabulary with the basic symbols
+
     def pre_tokenize(self):
         """
         We are going to pre_tokenize the corpus just by splitting words by spaces
         """
-        return self.corpus.split(" ")
-
+        data = self.corpus.encode("utf-8")  # we encode the corpus into bytes
+        return [bytes([b]) for b in data]  # list of 1-byte tokens
 
     def generate_vocabulary(self, pre_tokenized_corpus):
         """
