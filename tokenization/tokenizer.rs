@@ -71,6 +71,8 @@ impl ByteLevelBPETokenizer {
             self.vocabulary
                 .insert(actual_combination.clone(), self.last_token_id);
             self.last_token_id = self.last_token_id + 1;
+
+            return;
         }
 
         for i in 0..2 {
@@ -84,4 +86,8 @@ impl ByteLevelBPETokenizer {
 fn main() {
     let mut tokenizer = ByteLevelBPETokenizer::new(127);
     tokenizer.train("Hello world!");
+    tokenizer.initialize_vocabulary();
+    // println!("{:?}", tokenizer.vocabulary);
+    println!("{:?}", tokenizer.vocabulary.len());
+    println!("{:?}", tokenizer.last_token_id);
 }
