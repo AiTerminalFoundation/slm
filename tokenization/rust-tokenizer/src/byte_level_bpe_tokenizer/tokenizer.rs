@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
+use crate::models::pair_frequency::PairFrequency;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 struct ByteLevelBPETokenizer {
     num_merges: u16,
     vocabulary: HashMap<Vec<u8>, u32>, // maps byte sequences to ids
-    merges: Vec<(Vec<u8>, Vec<u8>)>,   // ordered list of merge operations
-    byte_encoder: HashMap<u8, String>, // maps bytes to unicode characters
-    byte_decoder: HashMap<String, u8>, // maps unicode characters to bytes
     last_token_id: u32,
 }
 
@@ -15,32 +13,61 @@ impl ByteLevelBPETokenizer {
         return Self {
             num_merges: num_merges as u16,
             vocabulary: HashMap::new(),
-            merges: Vec::new(),
-            byte_encoder: HashMap::new(),
-            byte_decoder: HashMap::new(),
             last_token_id: 0,
         };
     }
 
     fn train(&mut self, corpus: &str) {
-        // initialize vocabulary
-        // pre-tokenize corpus
-        // convert tokens to byte sequences
+        self.initialize_vocabulary();
+        let words_as_bytes: Vec<Vec<u8>> = self.pre_tokenize_corpus(corpus);
+
         // iteratively find the most frequent pairs
         // merge pairs until we reach num_merges
-        // build the final vocabulary
+
+        for _i in 0..self.num_merges {
+            let mut pairs_frequencies = HashMap::new();
+            let mut top_frequency: BinaryHeap<PairFrequency> = BinaryHeap::new();
+
+            for word in words_as_bytes.iter() {
+                let word_pairs_frequencies = self.get_word_pairs(word);
+                // adding the pairs frequencies to the main hashmap
+                for item in word_pairs_frequencies {
+                    let key = item.0;
+                    let main_frequency = pairs_frequencies.get(&key).unwrap_or(&0);
+                    let current_frequency = item.1; // the item of the map is a tuple with the key in 0 and freq in 1
+                    let new_frequency = main_frequency + current_frequency;
+                    pairs_frequencies.insert(key, new_frequency);
+
+                    //TODO fix HashMap key type
+                    // top_frequency.push(Reverse(PairFrequency {
+                    //     pair: key,
+                    //     frequency: new_frequency as u32,
+                    // }));
+
+                    if pairs_frequencies.len() > 1 {
+                        top_frequency.pop();
+                    }
+                }
+            }
+            // at the end of the for loop we have the updated frequency map for the current merge iteration
+
+            // add merge to the vocabulary
+
+            // update all the words
+        }
     }
 
-    fn get_word_pairs(&self, word: &[u8]) -> HashSet<[u8; 2]> {
-        let mut word_pairs = HashSet::new();
+    fn get_word_pairs(&self, word: &[u8]) -> HashMap<[u8; 2], u8> {
+        let mut word_pairs_frequencies = HashMap::new();
 
         for i in 0..(word.len() - 1) {
             let pair: [u8; 2] = [word[i], word[i + 1]];
 
-            word_pairs.insert(pair);
+            let frequency = word_pairs_frequencies.get(&pair).unwrap_or(&0);
+            word_pairs_frequencies.insert(pair, frequency + 1);
         }
 
-        word_pairs
+        word_pairs_frequencies
     }
 
     /// Get the corpus as a string, split it by whitespace, and convert each word to a byte sequence.
@@ -81,13 +108,4 @@ impl ByteLevelBPETokenizer {
             actual_combination.remove(actual_combination.len() - 1);
         }
     }
-}
-
-fn main() {
-    let mut tokenizer = ByteLevelBPETokenizer::new(127);
-    tokenizer.train("Hello world!");
-    tokenizer.initialize_vocabulary();
-    // println!("{:?}", tokenizer.vocabulary);
-    println!("{:?}", tokenizer.vocabulary.len());
-    println!("{:?}", tokenizer.last_token_id);
 }
