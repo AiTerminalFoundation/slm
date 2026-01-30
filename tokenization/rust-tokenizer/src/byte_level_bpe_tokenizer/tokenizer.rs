@@ -10,18 +10,18 @@ pub struct ByteLevelBPETokenizer {
 }
 
 impl ByteLevelBPETokenizer {
-    fn new(num_merges: i8) -> Self {
-        return Self {
-            num_merges: num_merges as u16,
+    pub fn new(num_merges: u16) -> Self {
+        Self {
+            num_merges,
             vocabulary: HashMap::new(),
             decoder: HashMap::new(),
             last_token_id: 0,
-        };
+        }
     }
 
-    fn train(&mut self, corpus: &str) {
+    pub fn train(&mut self, corpus: &str) {
         self.initialize_vocabulary();
-        let words_as_ids: Vec<Vec<u32>> = self.pre_tokenize_corpus(corpus);
+        let mut words_as_ids: Vec<Vec<u32>> = self.pre_tokenize_corpus(corpus);
 
         // iteratively find the most frequent pairs
         // merge pairs until we reach num_merges
@@ -32,7 +32,7 @@ impl ByteLevelBPETokenizer {
             // min-heap useful to get always the most frequent pair
             let mut top_frequency: BinaryHeap<Reverse<PairFrequency>> = BinaryHeap::new();
 
-            for word in words_as_ids.iter() {
+            for word in &words_as_ids {
                 let word_pairs_frequencies = self.get_word_pairs(word);
                 // adding the pairs frequencies to the main hashmap
                 for item in word_pairs_frequencies {
@@ -42,27 +42,36 @@ impl ByteLevelBPETokenizer {
                     let new_frequency = main_frequency + current_frequency;
                     pairs_frequencies.insert(key, new_frequency);
 
-                    top_frequency.push(Reverse(
-                        PairFrequency {
-                            pair: key,
-                            frequency: new_frequency,
-                        }
-                    ));
+                    top_frequency.push(Reverse(PairFrequency {
+                        pair: key,
+                        frequency: new_frequency,
+                    }));
 
                     if top_frequency.len() > 1 {
                         top_frequency.pop();
                     }
                 }
             }
+
             // at the end of the for loop we have the updated frequency map for the current merge iteration
             if top_frequency.is_empty() {
                 break;
             }
 
             let top_pair_frequency = top_frequency.pop().unwrap().0;
-            self.add_new_pair_to_vocabulary(&top_pair_frequency.pair);
+            let token_id = self.add_new_pair_to_vocabulary(&top_pair_frequency.pair);
 
             // update all the words
+            // we find the top_pair_frequency that we found in the earlier loop,
+            // and we replace it with the new token id
+            for word in words_as_ids.iter_mut() {
+                let index_option = self.find_pair(&word, &top_pair_frequency.pair);
+                if index_option.is_some() {
+                    let index = index_option.unwrap();
+                    word[index] = token_id;
+                    word.remove(index + 1);
+                }
+            }
         }
     }
 
@@ -97,9 +106,10 @@ impl ByteLevelBPETokenizer {
         let words_as_ids: Vec<Vec<u32>> = words_as_bytes
             .iter()
             .map(|word_as_bytes| {
-                word_as_bytes.iter().map(|byte| {
-                    *self.vocabulary.get(&vec![*byte]).unwrap()
-                }).collect::<Vec<u32>>()
+                word_as_bytes
+                    .iter()
+                    .map(|byte| *self.vocabulary.get(&vec![*byte]).unwrap())
+                    .collect::<Vec<u32>>()
             })
             .collect();
 
@@ -110,44 +120,56 @@ impl ByteLevelBPETokenizer {
     /// We are going to put all possible combinations of 8 bit (so 0-255) and give them an ID
     /// For now I will use a backtracking algo to generate all combinations of bits
     fn initialize_vocabulary(&mut self) {
-        self.backtrack_initialize_vocabulary(Vec::new());
-    }
-
-    fn backtrack_initialize_vocabulary(&mut self, mut actual_combination: Vec<u8>) {
-        if actual_combination.len() == 8 {
-
-            self.add_byte_sequence_to_vocabulary_and_decoder(actual_combination.clone());
-
-            return;
-        }
-
-        for i in 0..2 {
-            actual_combination.push(i);
-            self.backtrack_initialize_vocabulary(actual_combination.clone());
-            actual_combination.remove(actual_combination.len() - 1);
+        for i in 0..=255 {
+            let byte_sequence = [i].to_vec();
+            self.add_byte_sequence_to_vocabulary_and_decoder(byte_sequence);
         }
     }
 
     /// We add the new merge we found to the vocabulary
-    /// The input is composed by 2 token IDS, we will decode it inside byte a sequence and
+    /// The input is composed by 2 token IDS, we will decode it inside byte a sequence, and
     /// then we will create a new ID for that byte sequence and will add it to the vocabulary
-    fn add_new_pair_to_vocabulary(&mut self, ids_pair: &[u32; 2]) {
-        let mut first_byte_sequence = self.decoder.get(&ids_pair[0]).unwrap_or(&Vec::new()).clone();
-        let second_byte_sequence = self.decoder.get(&ids_pair[1]).unwrap_or(&Vec::new()).clone();
+    fn add_new_pair_to_vocabulary(&mut self, ids_pair: &[u32; 2]) -> u32 {
+        let mut first_byte_sequence = self
+            .decoder
+            .get(&ids_pair[0])
+            .unwrap_or(&Vec::new())
+            .clone();
+
+        let second_byte_sequence = self
+            .decoder
+            .get(&ids_pair[1])
+            .unwrap_or(&Vec::new())
+            .clone();
 
         first_byte_sequence.extend(&second_byte_sequence);
 
-        self.add_byte_sequence_to_vocabulary_and_decoder(first_byte_sequence)
+        let token_id = self.add_byte_sequence_to_vocabulary_and_decoder(first_byte_sequence);
+
+        token_id
     }
 
-    fn add_byte_sequence_to_vocabulary_and_decoder(&mut self, byte_sequence: Vec<u8>) {
-        self.vocabulary
-            .insert(byte_sequence.clone(), self.last_token_id);
+    fn add_byte_sequence_to_vocabulary_and_decoder(&mut self, byte_sequence: Vec<u8>) -> u32 {
+        let token_id = self.last_token_id;
+        self.vocabulary.insert(byte_sequence.clone(), token_id);
 
         // updating the decoder, so we can retrieve a byte sequence by its id
-        self.decoder
-            .insert(self.last_token_id, byte_sequence.clone());
+        self.decoder.insert(token_id, byte_sequence.clone());
 
         self.last_token_id += 1;
+
+        // return the current
+        token_id
+    }
+
+    /// This function returns the 1st index of the pair if available
+    fn find_pair(&self, word: &[u32], pair: &[u32; 2]) -> Option<usize> {
+        for i in 0..(word.len() - 1) {
+            if word[i] == pair[0] && word[i + 1] == pair[1] {
+                return Some(i);
+            }
+        }
+
+        None
     }
 }
