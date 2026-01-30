@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 #[derive(Eq, PartialEq)]
 pub struct PairFrequency {
-    pub pair: (Vec<u8>, Vec<u8>),
+    pub pair: [u32; 2],
     pub frequency: u32,
 }
 
