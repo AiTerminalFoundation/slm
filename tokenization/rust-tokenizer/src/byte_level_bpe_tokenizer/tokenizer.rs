@@ -1,6 +1,5 @@
 use crate::models::pair_frequency::PairFrequency;
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::HashMap;
 
 pub struct ByteLevelBPETokenizer {
     num_merges: u16,
@@ -29,8 +28,7 @@ impl ByteLevelBPETokenizer {
         for _i in 0..self.num_merges {
             let mut pairs_frequencies = HashMap::new();
 
-            // min-heap useful to get always the most frequent pair
-            let mut top_frequency: BinaryHeap<Reverse<PairFrequency>> = BinaryHeap::new();
+            let mut top_frequency: Option<PairFrequency> = None;
 
             for word in &words_as_ids {
                 let word_pairs_frequencies = self.get_word_pairs(word);
@@ -42,32 +40,33 @@ impl ByteLevelBPETokenizer {
                     let new_frequency = main_frequency + current_frequency;
                     pairs_frequencies.insert(key, new_frequency);
 
-                    top_frequency.push(Reverse(PairFrequency {
-                        pair: key,
-                        frequency: new_frequency,
-                    }));
-
-                    if top_frequency.len() > 1 {
-                        top_frequency.pop();
+                    if top_frequency.is_none()
+                        || top_frequency.as_ref().unwrap().frequency < new_frequency
+                    {
+                        top_frequency = Some(PairFrequency {
+                            pair: key,
+                            frequency: new_frequency,
+                        })
                     }
                 }
             }
 
             // at the end of the for loop we have the updated frequency map for the current merge iteration
-            if top_frequency.is_empty() {
+            if top_frequency.is_none() {
                 break;
             }
 
-            let top_pair_frequency = top_frequency.pop().unwrap().0;
-            let token_id = self.add_new_pair_to_vocabulary(&top_pair_frequency.pair);
+            let top_frequency_unwrapped = top_frequency.unwrap();
+            let token_id = self.add_new_pair_to_vocabulary(&top_frequency_unwrapped.pair);
 
             // update all the words
-            // we find the top_pair_frequency that we found in the earlier loop,
+            // we find the pair with higher frequency that we found in the earlier loop,
             // and we replace it with the new token id
             for word in words_as_ids.iter_mut() {
-                let index_option = self.find_pair(&word, &top_pair_frequency.pair);
-                if index_option.is_some() {
-                    let index = index_option.unwrap();
+                let indexes = self.find_pairs(&word, &top_frequency_unwrapped.pair);
+
+                // going through the indexes in reverse to avoid index shifting
+                for &index in indexes.iter().rev() {
                     word[index] = token_id;
                     word.remove(index + 1);
                 }
@@ -162,14 +161,34 @@ impl ByteLevelBPETokenizer {
         token_id
     }
 
-    /// This function returns the 1st index of the pair if available
-    fn find_pair(&self, word: &[u32], pair: &[u32; 2]) -> Option<usize> {
-        for i in 0..(word.len() - 1) {
+    /// This function returns the 1st index of each non-overlapping pair if available
+    fn find_pairs(&self, word: &[u32], pair: &[u32; 2]) -> Vec<usize> {
+        let mut pairs_indexes = Vec::new();
+        let mut i = 0;
+
+        while i < word.len() - 1 {
             if word[i] == pair[0] && word[i + 1] == pair[1] {
-                return Some(i);
+                pairs_indexes.push(i);
+                i += 2;
+            } else {
+                i += 1;
             }
         }
 
-        None
+        pairs_indexes
+    }
+
+    pub fn get_vocabulary(&self) -> HashMap<Vec<u8>, u32> {
+        self.vocabulary.clone()
+    }
+
+    pub fn decode_word(&self, word_as_ids: Vec<u32>) -> String {
+        let mut word_as_bytes: Vec<u8> = Vec::new();
+
+        for id in word_as_ids.iter() {
+            word_as_bytes.extend(self.decoder.get(id).unwrap_or(&Vec::new()));
+        }
+
+        String::from_utf8(word_as_bytes).unwrap()
     }
 }
