@@ -5,15 +5,17 @@ use std::collections::HashMap;
 #[derive(Serialize, Deserialize)]
 pub struct ByteLevelBPETokenizer {
     num_merges: u16,
+
     #[serde(skip)]
     vocabulary: HashMap<Vec<u8>, u32>, // maps byte sequences to ids
-
     // vocabulary_as_vec is not really useful in the algorithm, will just be used to have easier JSON serialization
     // as the HashMap will return an error as the key (vec<u8>) is not a string
     vocabulary_as_vec: Vec<(Vec<u8>, u32)>,
+
     merge_rules: Vec<(Vec<u8>, Vec<u8>)>,
     #[serde(skip)]
     decoder: HashMap<u32, Vec<u8>>, // decodes token ids to bytes sequences
+    decoder_as_vec: Vec<(u32, Vec<u8>)>, // same thing of the vocabulary_as_vec, useful just for json serialization
     #[serde(skip)]
     last_token_id: u32,
 }
@@ -26,6 +28,7 @@ impl ByteLevelBPETokenizer {
             vocabulary_as_vec: Vec::new(),
             merge_rules: Vec::new(),
             decoder: HashMap::new(),
+            decoder_as_vec: Vec::new(),
             last_token_id: 0,
         }
     }
@@ -199,8 +202,17 @@ impl ByteLevelBPETokenizer {
     /// This function writes the tokenizer object as a JSON and then export it to a given filepath
     pub fn export_to_json(&mut self, path: &str) -> std::io::Result<()> {
         // populating the vocabulary as a vector with the hashmap vocabulary values
-        self.vocabulary_as_vec = self.vocabulary.iter()
+        self.vocabulary_as_vec = self
+            .vocabulary
+            .iter()
             .map(|(key, value)| (key.clone(), *value))
+            .collect();
+
+        // populating decoder as a vector
+        self.decoder_as_vec = self
+            .decoder
+            .iter()
+            .map(|(key, value)| (*key, value.clone()))
             .collect();
 
         // serializing to JSON the tokenizer object
