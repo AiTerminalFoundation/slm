@@ -5,13 +5,14 @@ mod byte_level_bpe_tokenizer;
 mod models;
 
 fn main() {
-    let mut tokenizer: ByteLevelBPETokenizer = ByteLevelBPETokenizer::new(2);
+    let mut tokenizer: ByteLevelBPETokenizer = ByteLevelBPETokenizer::new(15);
     tokenizer.train("Hello, World, test tokenizer, tea, coffee, heating");
 
     let vocabulary: HashMap<Vec<u8>, u32> = tokenizer.get_vocabulary();
-    println!("size {:?}", vocabulary.len());
-    println!("All tokens as characters");
-    for token in vocabulary.keys() {
-        println!(tokenizer.decode_word(token))
+    for item in vocabulary {
+        let string_word = tokenizer.decode_word(item.0.clone());
+        if !string_word.is_empty() {
+            println!("{}: {}", string_word, item.1);
+        }
     }
 }

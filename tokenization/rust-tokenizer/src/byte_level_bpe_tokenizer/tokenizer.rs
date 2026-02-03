@@ -63,7 +63,7 @@ impl ByteLevelBPETokenizer {
             // we find the pair with higher frequency that we found in the earlier loop,
             // and we replace it with the new token id
             for word in words_as_ids.iter_mut() {
-                let indexes = self.find_pairs(&word, &top_frequency_unwrapped.pair);
+                let indexes = self.find_pairs(word, &top_frequency_unwrapped.pair);
 
                 // going through the indexes in reverse to avoid index shifting
                 for &index in indexes.iter().rev() {
@@ -143,9 +143,7 @@ impl ByteLevelBPETokenizer {
 
         first_byte_sequence.extend(&second_byte_sequence);
 
-        let token_id = self.add_byte_sequence_to_vocabulary_and_decoder(first_byte_sequence);
-
-        token_id
+        self.add_byte_sequence_to_vocabulary_and_decoder(first_byte_sequence)
     }
 
     fn add_byte_sequence_to_vocabulary_and_decoder(&mut self, byte_sequence: Vec<u8>) -> u32 {
@@ -182,13 +180,7 @@ impl ByteLevelBPETokenizer {
         self.vocabulary.clone()
     }
 
-    pub fn decode_word(&self, word_as_ids: Vec<u32>) -> String {
-        let mut word_as_bytes: Vec<u8> = Vec::new();
-
-        for id in word_as_ids.iter() {
-            word_as_bytes.extend(self.decoder.get(id).unwrap_or(&Vec::new()));
-        }
-
-        String::from_utf8(word_as_bytes).unwrap()
+    pub fn decode_word(&self, word_as_bytes: Vec<u8>) -> String {
+        String::from_utf8(word_as_bytes).unwrap_or_default()
     }
 }
