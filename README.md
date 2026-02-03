@@ -1,4 +1,4 @@
-# slm
+# Small Language Model from scratch for AI-Terminal
 
 # Data Loading
 - Used NL2Bash dataset
