@@ -1,10 +1,20 @@
 use crate::models::pair_frequency::PairFrequency;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Serialize, Deserialize)]
 pub struct ByteLevelBPETokenizer {
     num_merges: u16,
+    #[serde(skip)]
     vocabulary: HashMap<Vec<u8>, u32>, // maps byte sequences to ids
-    decoder: HashMap<u32, Vec<u8>>,    // decodes token ids to bytes sequences
+
+    // vocabulary_as_vec is not really useful in the algorithm, will just be used to have easier JSON serialization
+    // as the HashMap will return an error as the key (vec<u8>) is not a string
+    vocabulary_as_vec: Vec<(Vec<u8>, u32)>,
+    merge_rules: Vec<(Vec<u8>, Vec<u8>)>,
+    #[serde(skip)]
+    decoder: HashMap<u32, Vec<u8>>, // decodes token ids to bytes sequences
+    #[serde(skip)]
     last_token_id: u32,
 }
 
@@ -13,6 +23,8 @@ impl ByteLevelBPETokenizer {
         Self {
             num_merges,
             vocabulary: HashMap::new(),
+            vocabulary_as_vec: Vec::new(),
+            merge_rules: Vec::new(),
             decoder: HashMap::new(),
             last_token_id: 0,
         }
@@ -57,7 +69,8 @@ impl ByteLevelBPETokenizer {
             }
 
             let top_frequency_unwrapped = top_frequency.unwrap();
-            let token_id = self.add_new_pair_to_vocabulary(&top_frequency_unwrapped.pair);
+            let token_id =
+                self.add_new_pair_to_vocabulary_and_merge_rules(&top_frequency_unwrapped.pair);
 
             // update all the words
             // we find the pair with higher frequency that we found in the earlier loop,
@@ -128,7 +141,7 @@ impl ByteLevelBPETokenizer {
     /// We add the new merge we found to the vocabulary
     /// The input is composed by 2 token IDS, we will decode it inside byte a sequence, and
     /// then we will create a new ID for that byte sequence and will add it to the vocabulary
-    fn add_new_pair_to_vocabulary(&mut self, ids_pair: &[u32; 2]) -> u32 {
+    fn add_new_pair_to_vocabulary_and_merge_rules(&mut self, ids_pair: &[u32; 2]) -> u32 {
         let mut first_byte_sequence = self
             .decoder
             .get(&ids_pair[0])
@@ -141,6 +154,9 @@ impl ByteLevelBPETokenizer {
             .unwrap_or(&Vec::new())
             .clone();
 
+        let merge_rule = (first_byte_sequence.clone(), second_byte_sequence.clone());
+        self.merge_rules.push(merge_rule);
+
         first_byte_sequence.extend(&second_byte_sequence);
 
         self.add_byte_sequence_to_vocabulary_and_decoder(first_byte_sequence)
@@ -149,6 +165,10 @@ impl ByteLevelBPETokenizer {
     fn add_byte_sequence_to_vocabulary_and_decoder(&mut self, byte_sequence: Vec<u8>) -> u32 {
         let token_id = self.last_token_id;
         self.vocabulary.insert(byte_sequence.clone(), token_id);
+
+        // not updating the vocabulary as vector while adding to avoid overloading memory during training
+        // it will be entirely populated in the json export
+        // self.vocabulary_as_vec.push((byte_sequence.clone(), token_id));
 
         // updating the decoder, so we can retrieve a byte sequence by its id
         self.decoder.insert(token_id, byte_sequence.clone());
@@ -176,11 +196,16 @@ impl ByteLevelBPETokenizer {
         pairs_indexes
     }
 
-    pub fn get_vocabulary(&self) -> HashMap<Vec<u8>, u32> {
-        self.vocabulary.clone()
-    }
+    /// This function writes the tokenizer object as a JSON and then export it to a given filepath
+    pub fn export_to_json(&mut self, path: &str) -> std::io::Result<()> {
+        // populating the vocabulary as a vector with the hashmap vocabulary values
+        self.vocabulary_as_vec = self.vocabulary.iter()
+            .map(|(key, value)| (key.clone(), *value))
+            .collect();
 
-    pub fn decode_word(&self, word_as_bytes: Vec<u8>) -> String {
-        String::from_utf8(word_as_bytes).unwrap_or_default()
+        // serializing to JSON the tokenizer object
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
     }
 }
