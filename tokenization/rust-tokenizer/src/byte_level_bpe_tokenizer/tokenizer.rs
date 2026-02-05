@@ -220,4 +220,8 @@ impl ByteLevelBPETokenizer {
         std::fs::write(path, json)?;
         Ok(())
     }
+
+    pub fn get_vocabulary(&self) -> HashMap<Vec<u8>, u32> {
+        self.vocabulary.clone()
+    }
 }
